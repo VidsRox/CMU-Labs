@@ -126,7 +126,7 @@ void rotate_blocked2(int dim, pixel *__restrict__ src, pixel *__restrict__ dst){
             pixel *src_row = src + i * dim;
 
             for(j = bj; j < bj + block; j++){
-                // now src_row[j] is just src_row + j — an addition, not a multiply
+                // now src_row[j] is just src_row + j - an addition, not a multiply
                 dst[RIDX(dim-1-j, i, dim)] = src_row[j];
             }
         }
@@ -411,7 +411,7 @@ void smooth_prefix_sum(int dim, pixel *src, pixel *dst){
             pR += p.red; pG += p.green; pB += p.blue;
 
             int idx = (r+1)*(dim+1) + (c+1);//idx  is the flat 1D index for position (r+1, c+1) 
-                                            //in the (dim+1) × (dim+1) prefix table — the shift in action.
+                                            //in the (dim+1) × (dim+1) prefix table - the shift in action.
             
             int above = r*(dim+1) + (c+1);//'above' is the flat index for (r, c+1), which by the definition of 
                                           //sumMat holds the sum of all rows above the current row, same column range.
