@@ -114,23 +114,27 @@ void rotate_blocked(int dim, pixel *src, pixel *dst){
     }
 }
 
-/*
-    rotate_blocked2 - implementing blocking mechanism
-*/
-char rotate_blocked2_descr[] = "rotate_blocked2: implementation for blocked rotate function w size 16";
-void rotate_blocked_2(int dim, pixel *src, pixel *dst){
+char rotate_blocked2_descr[] = "rotate_blocked: implementation for blocked rotate function w strength reduction and restrict experiment";
+void rotate_blocked2(int dim, pixel *__restrict__ src, pixel *__restrict__ dst){
     int bi, bj, i, j;
-    int block = 16;
+    int block = 8;
     for (bi = 0; bi<dim; bi+=block){
      for(bj = 0; bj<dim; bj+=block){
         for(i = bi; i< bi + block; i++){
+
+            // compute i * dim exactly once, store it as a pointer offset
+            pixel *src_row = src + i * dim;
+
             for(j = bj; j < bj + block; j++){
-                dst[RIDX(dim-1-j, i, dim)] = src[RIDX(i, j, dim)];
+                // now src_row[j] is just src_row + j — an addition, not a multiply
+                dst[RIDX(dim-1-j, i, dim)] = src_row[j];
             }
         }
      }
     }
 }
+
+
 
 /*
     rotate_blocked3 - implementing blocking mechanism
@@ -172,9 +176,12 @@ void rotate(int dim, pixel *src, pixel *dst)
 void register_rotate_functions() 
 {
     add_rotate_function(&naive_rotate, naive_rotate_descr);   
+    add_rotate_function(&rotate_2x, rotate_2x_descr);
+    add_rotate_function(&rotate_4x, rotate_4x_descr);
+    add_rotate_function(&rotate_8x, rotate_8x_descr);
     add_rotate_function(&rotate, rotate_descr);   
     add_rotate_function(&rotate_blocked,  rotate_blocked_descr);
-    add_rotate_function(&rotate_blocked_2, rotate_blocked2_descr);
+    add_rotate_function(&rotate_blocked2, rotate_blocked2_descr);
     /* ... Register additional test functions here */
 }
 
@@ -377,11 +384,80 @@ void smooth_optimized(int dim, pixel *src, pixel *dst){
     }
 }
 
+
+
+/*
+    prefix sum approach
+*/
+char smooth_prefix_sum_descr[] = "Smooth prefix: prefix sum based smooth";
+
+void smooth_prefix_sum(int dim, pixel *src, pixel *dst){
+    
+//matrices initialized with first row/column as all zeros, similar to how sumMat was initialized in the leetcode problem
+    int *sumR = calloc((dim+1) * (dim+1), sizeof(int));
+    int *sumG = calloc((dim+1) * (dim+1), sizeof(int));
+    int *sumB = calloc((dim+1) * (dim+1), sizeof(int));
+
+    //build prefix tables, same constructor logic as in range sum query problem(s)
+    for(int r = 0; r<dim; r++){
+        
+        int pR = 0, pG = 0, pB = 0; //running row sums, reset at the start of each row
+                                    //same as the prefix variable from the sumMat constructor
+        
+        for(int c = 0; c<dim; c++){
+            pixel p = src[RIDX(r, c, dim)];
+            
+    //After processing column c, pR holds the sum of the red channel of the current row from column 0 through column c
+            pR += p.red; pG += p.green; pB += p.blue;
+
+            int idx = (r+1)*(dim+1) + (c+1);//idx  is the flat 1D index for position (r+1, c+1) 
+                                            //in the (dim+1) × (dim+1) prefix table — the shift in action.
+            
+            int above = r*(dim+1) + (c+1);//'above' is the flat index for (r, c+1), which by the definition of 
+                                          //sumMat holds the sum of all rows above the current row, same column range.
+
+            sumR[idx] = pR + sumR[above]; // Adding pR and sumR[above] is identical to
+            sumG[idx] = pG + sumG[above]; //'sumMat[r+1][c+1] = prefix + above' from the constructor
+            sumB[idx] = pB + sumB[above]; //just written with flat array indexing instead of 2D indexing because 
+                                          //calloc gives you a 1D array. This is done separately for all three channels.
+        
+// After this loop, sumR, sumG, sumB are three complete prefix tables, one per channel, equivalent to three separate sumMat matrices.       
+        }
+    }
+
+    //answer each pixel's neighbourhood query with four lookups
+    for(int i = 0; i<dim; i++){
+        for(int j = 0; j<dim; j++){
+            
+        //clamping the neighbourhood boundaries
+            int r1 = max(i-1, 0), c1 = max(j-1, 0);
+            int r2 = min(i+1, dim-1), c2 = min(j+1, dim-1);
+            
+        //counting how many pixels are in the neighbourhood
+            int count = (r2 - r1 + 1) * (c2 - c1 + 1);
+
+        // translate to sumMat space: bottom right = (r2+1, c2+1), top left = (r1, c1)
+            int bottomRight = (r2+1)*(dim+1) + (c2+1);
+            int above = r1*(dim+1) + (c2+1);
+            int left = (r2+1)*(dim+1) + c1;
+            int topLeft = r1*(dim+1) + c1;
+
+        //inclusion-exclusion formula appplied to each color channel separately
+            dst[RIDX(i,j,dim)].red = (sumR[bottomRight] - sumR[above] - sumR[left] + sumR[topLeft])/count;
+            dst[RIDX(i,j,dim)].green = (sumG[bottomRight] - sumG[above] - sumG[left] + sumG[topLeft])/count;
+            dst[RIDX(i,j,dim)].blue = (sumB[bottomRight] - sumB[above] - sumB[left] + sumB[topLeft])/count;
+        }
+    }
+
+    free(sumR); free(sumG); free(sumB);
+}
+
+
 /*
  * smooth - Your current working version of smooth. 
  * IMPORTANT: This is the version you will be graded on
  */
-char smooth_descr[] = "smooth: Current working version";
+char smooth_descr[] = "smooth: Current working version- the manual arithmetic version";
 void smooth(int dim, pixel *src, pixel *dst) 
 {
     smooth_optimized(dim, src, dst);
@@ -400,6 +476,7 @@ void register_smooth_functions() {
     add_smooth_function(&smooth, smooth_descr);
     add_smooth_function(&naive_smooth, naive_smooth_descr);
     add_smooth_function(&smooth_optimized, smooth_optimized_descr);
+    add_smooth_function(&smooth_prefix_sum, smooth_prefix_sum_descr);
     /* ... Register additional test functions here */
 }
 
